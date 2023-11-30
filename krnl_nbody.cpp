@@ -50,6 +50,10 @@ ALL TIMES.
 
 #include "nbody.h"
 #include "hls_math.h"
+
+#define BURST_J 20
+#define DATA_II 8
+
 /*
     Vector Addition Kernel Implementation 
     Arguments:
@@ -61,23 +65,27 @@ ALL TIMES.
 
 
 extern "C" {
-void krnl_nbody(fixed_t *particles, 
-                fixed_t *temp,
+void krnl_nbody(float *particles, 
+                float *temp,
                 int iterations){
 
-    fixed_t* particles_tmp;
-    fixed_t* temp_tmp;
+    float* particles_tmp;
+    float* temp_tmp;
     particles_tmp = particles;
     temp_tmp = temp;
 
 
-    const fixed_t time_step = 0.1;
-    const fixed_t G = 6.674; // G = 6.6743e-11f;
-    const fixed_t G_scale = 1000;
-    const fixed_t min_cul_radius = 0.01;
+    const float time_step = 0.01;
+    const float G = 6.6743e-11f;
+    const float min_cul_radius = 0.01;
 
-    fixed_t BufP[BATCH_SIZE][5]; // batch several particles to calculate in parallel
-    fixed_t BufF[BATCH_SIZE][2]; // batch the forces on the particles
+    float BufP[BATCH_SIZE][5]; // batch several particles to calculate in parallel
+    float BufF[BATCH_SIZE][2]; // batch the forces on the particles
+
+
+    float BufJ[BURST_J][5]; //burst read particle_j to local buffer
+
+    float Buf_Shift[BATCH_SIZE][DATA_II][2];
 
     #pragma HLS array_reshape dim=2 type=cyclic factor=2 variable=BufP
     #pragma HLS array_partition dim=1 type=complete variable=BufP
@@ -85,93 +93,129 @@ void krnl_nbody(fixed_t *particles,
     #pragma HLS array_reshape dim=2 type=complete variable=BufF
     #pragma HLS array_partition dim=1 type=complete variable=BufF
      
+    #pragma HLS array_partition dim=2 type=complete variable=BufJ
+
+    #pragma HLS array_partition dim=0 type=complete variable=Buf_Shift
+    
+
+
+
     
     TIME_STEP: for (int t = 0; t < ITERATIONS; t++){
         #pragma HLS pipeline off
         
         Pi: for (int i = 0; i < (INPUT_LENGTH*5); i += (BATCH_SIZE*5)){
             #pragma HLS pipeline off
-            int curr_index;
+            int curr_i;
             Load_Batch:for (int p = 0; p < BATCH_SIZE; p++){
                 #pragma HLS unroll
-                curr_index = i + p*5;
-                BufP[p][0] = particles_tmp[curr_index];      //x
-                BufP[p][1] = particles_tmp[curr_index+1];  //y
-                BufP[p][2] = particles_tmp[curr_index+2];  //vx
-                BufP[p][3] = particles_tmp[curr_index+3];  //vy
-                BufP[p][4] = particles_tmp[curr_index+4];  //mass
+                curr_i = i + p*5;
+                BufP[p][0] = particles_tmp[curr_i];      //x
+                BufP[p][1] = particles_tmp[curr_i+1];  //y
+                BufP[p][2] = particles_tmp[curr_i+2];  //vx
+                BufP[p][3] = particles_tmp[curr_i+3];  //vy
+                BufP[p][4] = particles_tmp[curr_i+4];  //mass
                 BufF[p][0] = 0;                     //force_x
                 BufF[p][1] = 0;                     //force_y
             }
-            
-            
-            Pj: for (int j = 0; j < (INPUT_LENGTH *5); j += 5)
-            {
-                //#pragma HLS pipeline
 
-                // read particle j
-                fixed_t xj = particles_tmp[j];
-                fixed_t yj = particles_tmp[j+1];
-                fixed_t massj = particles_tmp[j+4];
-                
-                
-                BATCH_FORCE: for (int b = 0; b < BATCH_SIZE; b++){
-                    #pragma HLS unroll
-                    // Calculate the distance between the two particles in 2D
-                    if (i + b == j){continue;}
-
-                    fixed_t dx = xj - BufP[b][0];
-                    fixed_t dy = yj - BufP[b][1];
-
-                     
-                    fixed_t distance = hls::sqrt(dx * dx + dy * dy);
-
-                    
-                    //  Define gravitational constant
-                    //  Calculate the gravitational force in 2D
-
-                    if (distance > min_cul_radius){
-                        fixed_t force_magnitude_1 = (G * BufP[b][4] * massj) / (distance * distance);
-                        fixed_t force_magnitude = force_magnitude_1 / G_scale;
-                        // fixed_t force_magnitude_2 = force_magnitude_3 / G_scale;
-                        // fixed_t force_magnitude_1 = force_magnitude_2 / G_scale;
-                        // fixed_t force_magnitude_0 = force_magnitude_1 / G_scale;
-                        // fixed_t force_magnitude = force_magnitude_1 / 100;
-
-
-
-                        // Calculate force components in 2D
-                        fixed_t rx = dx / distance;
-                        fixed_t ry = dy / distance;
-
-                        fixed_t force_x = force_magnitude * rx;
-                        fixed_t force_y = force_magnitude * ry;
-
-                        BufF[b][0] += force_x; //dependency in accumulation
-                        BufF[b][1] += force_y; //dependency in accumulation
-                    }
-                    
-                    
+            for (int p = 0; p < BATCH_SIZE; p++){
+                for (int s = 0; s < DATA_II; s++ ){
+                    Buf_Shift[p][s][0] = 0;
+                    Buf_Shift[p][s][1] = 0;
                 }
+            }
+            
+            
+            Pj: for (int j = 0; j < (INPUT_LENGTH *5); j += (BURST_J * 5))
+            {
+                
+                int curr_j;
+                Fill_bufJ: for (int j0 = j; j0 < BURST_J; j0++){
+                    curr_j = j + j0*5;
+                    BufJ[j0][0] = particles_tmp[curr_j];
+                    BufJ[j0][1] = particles_tmp[curr_j + 1];
+                    BufJ[j0][2] = particles_tmp[curr_j + 2];
+                    BufJ[j0][3] = particles_tmp[curr_j + 3];
+                    BufJ[j0][4] = particles_tmp[curr_j + 4];
+                }
+
+                
+                TILE_J: for (int j1 = 0; j1 < BURST_J; j1 ++){
+                    #pragma HLS pipeline
+                    float xj = BufJ[j1][0];
+                    float yj = BufJ[j1][1];
+                    float massj = BufJ[j1][4];
+                    
+                    
+                    BATCH_FORCE: for (int b = 0; b < BATCH_SIZE; b++){
+                        #pragma HLS unroll
+                        // Calculate the distance between the two particles in 2D
+                        if (i + b == j){continue;}
+
+                        float dx = xj - BufP[b][0];
+                        float dy = yj - BufP[b][1];
+
+                        
+                        float distance = sqrt(dx * dx + dy * dy);
+
+                        
+                        //  Define gravitational constant
+                        //  Calculate the gravitational force in 2D
+
+                        if (distance > min_cul_radius){
+                            float force_magnitude = (G * BufP[b][4] * massj) / (distance * distance);
+                            
+                            // float force_magnitude_2 = force_magnitude_3 / G_scale;
+                            // float force_magnitude_1 = force_magnitude_2 / G_scale;
+                            // float force_magnitude_0 = force_magnitude_1 / G_scale;
+                            // float force_magnitude = force_magnitude_1 / 100;
+
+
+
+                            // Calculate force components in 2D
+                            float rx = dx / distance;
+                            float ry = dy / distance;
+
+                            float force_x = force_magnitude * rx;
+                            float force_y = force_magnitude * ry;
+
+                            BufF[b][0] = force_x; //dependency in accumulation
+                            BufF[b][1] = force_y; //dependency in accumulation
+
+                            Buf_Shift[b][0][0] = force_x;
+                            Buf_Shift[b][0][1] = force_y;
+                            for (int s = DATA_II -1; s > 0; s --){
+                                Buf_Shift[b][s][0] = Buf_Shift[b][s-1][0];
+                                Buf_Shift[b][s][0] = Buf_Shift[b][s-1][0];
+                            }
+                            BufF[b][0] += Buf_Shift[b][DATA_II-1][0];
+                            BufF[b][1] += Buf_Shift[b][DATA_II-1][0];
+                        }
+                        
+                        
+                    }
+                }
+                
                     
             }
             
             
             Update_Batch: for (int p = 0; p < BATCH_SIZE; p++){
                 #pragma HLS unroll
-                curr_index = i + p*5;
-                fixed_t ax = BufF[p][0] / BufP[p][4];
-                fixed_t ay = BufF[p][1] / BufP[p][4];
+                curr_i = i + p*5;
+                float ax = BufF[p][0] / BufP[p][4];
+                float ay = BufF[p][1] / BufP[p][4];
                 // Update velocity in 2D using the calculated acceleration and time step
-                temp_tmp[curr_index+2] = BufP[p][2] + ax * time_step;
-                temp_tmp[curr_index+3] = BufP[p][3] + ay * time_step;
-                temp_tmp[curr_index] = BufP[p][0] + temp_tmp[curr_index+2] * time_step;
-                temp_tmp[curr_index+1] = BufP[p][1] + temp_tmp[curr_index+3] * time_step;
-                temp_tmp[curr_index+4] = BufP[p][4];
+                temp_tmp[curr_i+2] = BufP[p][2] + ax * time_step;
+                temp_tmp[curr_i+3] = BufP[p][3] + ay * time_step;
+                temp_tmp[curr_i] = BufP[p][0] + temp_tmp[curr_i+2] * time_step;
+                temp_tmp[curr_i+1] = BufP[p][1] + temp_tmp[curr_i+3] * time_step;
+                temp_tmp[curr_i+4] = BufP[p][4];
             }
         }
         
-        fixed_t *placeholder = temp_tmp;
+        float *placeholder = temp_tmp;
         temp_tmp = particles_tmp;
         particles_tmp = placeholder;
     }

@@ -10,10 +10,10 @@
 int main()
 {
     printf("Starting Nbody sims....\n");
-    fixed_t *particles;
-    fixed_t *original_particles;
-    fixed_t *temp;
-    particles = new fixed_t[INPUT_LENGTH * 5];
+    float *particles;
+    float *original_particles;
+    float *temp;
+    particles = new float[INPUT_LENGTH * 5];
     if (particles == NULL)
     {
         printf("Error allocating particles\n");
@@ -21,33 +21,33 @@ int main()
     }
 
     
-    original_particles = new fixed_t[INPUT_LENGTH * 5];
+    original_particles = new float[INPUT_LENGTH * 5];
     if (original_particles == NULL)
     {
         printf("Error allocating original_particles\n");
         exit(EXIT_FAILURE);
     }
     
-    temp = new fixed_t[INPUT_LENGTH * 5];
+    temp = new float[INPUT_LENGTH * 5];
     if (temp == NULL)
     {
         printf("Error allocating temp\n");
         exit(EXIT_FAILURE);
     }
 
-    fixed_t tmp0 = 18.643;
-    fixed_t tmp1 = 15.213;
-    fixed_t tmp2 = 18.740;
-    fixed_t tmp3 = 18.5;
-    fixed_t tmp4 = 1.127;
+    float tmp0 = 18.643;
+    float tmp1 = 15.213;
+    float tmp2 = 18.740;
+    float tmp3 = 18.5;
+    float tmp4 = 1.127;
 
-    fixed_t t0 = 8.9;
-    fixed_t t1 = 2.2;
-    fixed_t t2 = 1.005;
-    fixed_t t3 = 4.5;
+    float t0 = 8.9;
+    float t1 = 2.2;
+    float t2 = 1.005;
+    float t3 = 4.5;
     
 
-    fixed_t t = 2; 
+    float t = 2; 
 
     for (int i = 0; i < INPUT_LENGTH * 5; i += 5){
         particles[i] = tmp0;
