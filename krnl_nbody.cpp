@@ -62,6 +62,8 @@ ALL TIMES.
         size  (input)     --> Size of Vector in Integer
 */
 
+#define BATCH_SIZE (4)
+#define ROW_SIZE (INPUT_LENGTH / BATCH_SIZE)
 
 extern "C" {
 void krnl_nbody(float *particles, 
@@ -71,31 +73,38 @@ void krnl_nbody(float *particles,
 
     const float time_step = 0.01f;
     const float G = 6.67e-11f;
-    const float min_cul_radius = 0.001f;
-    const float max_cul_radius = 0.25f;
-    const float min_force = 0.0001f;
-    const float min_force_n = -0.0001f;
+    
     
 
     
     
-    float particle_i_buff[INPUT_LENGTH][5];
-    #pragma HLS array_partition dim=2 type=complete variable=particle_i_buff
-    #pragma HL
+    float particle_i_buff[BATCH_SIZE][ROW_SIZE][5];
+    #pragma HLS array_partition dim=3 type=complete variable=particle_i_buff
+    #pragma HLS array_partition dim=1 type=complete variable=particle_i_buff
+    //#pragma HLS array_reshape dim=1 type=block factor=4 variable=particle_i_buff
     
     
-    float bufF[INPUT_LENGTH][2];
-    #pragma HLS array_partition dim=2 type=complete variable=bufF
-
+    float bufF[BATCH_SIZE][ROW_SIZE][2];
+    #pragma HLS array_partition dim=3 type=complete variable=bufF
+    #pragma HLS array_partition dim=1 type=complete variable=bufF
+    //#pragma HLS array_reshape dim=1 type=block factor=4 variable=bufF
+    
     
     Read_particle: 
-    for (int i = 0; i < INPUT_LENGTH*5; i += 5){
-        particle_i_buff[i/5][0] = particles[i];
-        particle_i_buff[i/5][1] = particles[i+1];
-        particle_i_buff[i/5][2] = particles[i+2];
-        particle_i_buff[i/5][3] = particles[i+3];
-        particle_i_buff[i/5][4] = particles[i+4];
+    for (int r = 0; r < BATCH_SIZE; r ++){
+        for (int c = 0; c < ROW_SIZE; c++){
+            for (int h = 0; h < 5; h++){
+                particle_i_buff[r][c][h] = particles[r * ROW_SIZE + c * 5 + h];
+            }
+        }
     }
+    // for (int i = 0; i < INPUT_LENGTH*5; i += 5){
+    //     particle_i_buff[i/5/ROW_SIZE][i/5%ROW_SIZE][0] = particles[i];
+    //     particle_i_buff[i/5/ROW_SIZE][i/5%ROW_SIZE][1] = particles[i+1];
+    //     particle_i_buff[i/5/ROW_SIZE][i/5%ROW_SIZE][2] = particles[i+2];
+    //     particle_i_buff[i/5/ROW_SIZE][i/5%ROW_SIZE][3] = particles[i+3];
+    //     particle_i_buff[i/5/ROW_SIZE][i/5%ROW_SIZE][4] = particles[i+4];
+    // }
 
     
     
@@ -103,19 +112,20 @@ void krnl_nbody(float *particles,
     #pragma HLS pipeline off
 
         Loop_k: for (int k = 0; k < INPUT_LENGTH; k++){
-            #pragma HLS pipeline off
-            float x_k = particle_i_buff[k][0];
-            float y_k = particle_i_buff[k][1];
-            float mass_k = particle_i_buff[k][4];
+            //#pragma HLS pipeline off
+            float x_k = particle_i_buff[k / ROW_SIZE][k % ROW_SIZE][0];
+            float y_k = particle_i_buff[k / ROW_SIZE][k % ROW_SIZE][1];
+            float mass_k = particle_i_buff[k / ROW_SIZE][k % ROW_SIZE][4];
 
-            float force_x;
-            float force_y;
-            Loop_i: for (int i = 0; i < INPUT_LENGTH; i++ ){
-                if (i != k){
+            
+            Loop_i_Outer:
+            for (int i0 = 0; i0 < BATCH_SIZE; i0 ++){
+                #pragma HLS unroll
+                Loop_i: for (int i = 0; i < ROW_SIZE; i++){
                     // compute force
-                    float xi = particle_i_buff[i][0];
-                    float yi = particle_i_buff[i][1];
-                    float massi = particle_i_buff[i][4];
+                    float xi = particle_i_buff[i0][i][0];
+                    float yi = particle_i_buff[i0][i][1];
+                    float massi = particle_i_buff[i0][i][4];
 
                     float dx = x_k - xi;
                     float dy = y_k - yi;
@@ -125,53 +135,69 @@ void krnl_nbody(float *particles,
                     float distance = hls::sqrtf((dx * dx) + (dy * dy));
                 
                     float force_magnitude = (G * massi * mass_k) / distance_sqr;
-                    force_x = force_magnitude * (dx / distance);
-                    force_y = force_magnitude * (dy / distance);
+                    float force_x = force_magnitude * (dx / distance);
+                    float force_y = force_magnitude * (dy / distance);
                     if (!hls::isnan(force_x)){
-                        bufF[i][0] += force_x;
+                        bufF[i0][i][0] += force_x;
                     }
 
                     if (!hls::isnan(force_y)){
-                        bufF[i][1] += force_y;
+                        bufF[i0][i][1] += force_y;
                     }
-                
                     
-                    
-                }    
+                        
+                        
+                      
+                }                
             }
+
+
         }
         
 
-        Loop_u: for (int i = 0; i < INPUT_LENGTH; i++){
-            float x = particle_i_buff[i][0];
-            float y = particle_i_buff[i][1];
-            float vx = particle_i_buff[i][2];
-            float vy = particle_i_buff[i][3];
-            float mass = particle_i_buff[i][4];
-            float ax = bufF[i][0]/mass;
-            float ay = bufF[i][1]/mass;
-            float x_n = x + (vx * time_step);
-            float y_n = y + (vy * time_step);
-            float vx_n = vx + (ax * time_step);
-            float vy_n = vy + (ay * time_step);
+        Loop_u_r: 
+        for (int r = 0; r < BATCH_SIZE; r++){
+            Loop_u_c: 
+            for (int c = 0; c < ROW_SIZE; c++){
+                float x = particle_i_buff[r][c][0];
+                float y = particle_i_buff[r][c][1];
+                float vx = particle_i_buff[r][c][2];
+                float vy = particle_i_buff[r][c][3];
+                float mass = particle_i_buff[r][c][4];
+                float ax = bufF[r][c][0]/mass;
+                float ay = bufF[r][c][1]/mass;
+                float x_n = x + (vx * time_step);
+                float y_n = y + (vy * time_step);
+                float vx_n = vx + (ax * time_step);
+                float vy_n = vy + (ay * time_step);
+                
+                particle_i_buff[r][c][0] = hls::isnan(x_n) ? x : x_n;
+                particle_i_buff[r][c][1] = hls::isnan(y_n) ? y : y_n;
+                particle_i_buff[r][c][2] = hls::isnan(vx_n) ? vx : vx_n;
+                particle_i_buff[r][c][3] = hls::isnan(vy_n) ? vy : vy_n;
+            }
             
-            particle_i_buff[i][0] = hls::isnan(x_n) ? x : x_n;
-            particle_i_buff[i][1] = hls::isnan(y_n) ? y : y_n;
-            particle_i_buff[i][2] = hls::isnan(vx_n) ? vx : vx_n;
-            particle_i_buff[i][3] = hls::isnan(vy_n) ? vy : vy_n;
-            //particle_i_buff[i][4] = mass;
+            
         }
         
         
     }
     
     Write_particle: 
-    for (int i = 0; i < INPUT_LENGTH*5; i += 5){
-        particles[i] = particle_i_buff[i/5][0]; 
-        particles[i+1] = particle_i_buff[i/5][1];
-        particles[i+2] = particle_i_buff[i/5][2]; 
-        particles[i+3] = particle_i_buff[i/5][3]; 
-        
+    for (int r = 0; r < BATCH_SIZE; r ++){
+        for (int c = 0; c < ROW_SIZE; c++){
+            for (int h = 0; h < 5; h++){
+                particles[r * ROW_SIZE + c * 5 + h] = particle_i_buff[r][c][h];
+            }
+        }
     }
+
+    // for (int i = 0; i < INPUT_LENGTH*5; i += 5){
+    //     particles[i] = particle_i_buff[i/5][0]; 
+    //     particles[i+1] = particle_i_buff[i/5][1];
+    //     particles[i+2] = particle_i_buff[i/5][2]; 
+    //     particles[i+3] = particle_i_buff[i/5][3]; 
+        
+    // }
 }
 }

@@ -7,7 +7,7 @@
 #include "hls_math.h"
 
 #define INPUT_LENGTH (10000)
-#define BATCH_SIZE (8)
+//#define BATCH_SIZE (8)
 #define ITERATIONS (10)
 
 //typedef ap_fixed<16, 12, AP_RND, AP_WRAP> float;
