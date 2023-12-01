@@ -6,7 +6,7 @@
 #include "ap_fixed.h"
 #include "hls_math.h"
 
-#define INPUT_LENGTH (1000)
+#define INPUT_LENGTH (10000)
 #define BATCH_SIZE (8)
 #define ITERATIONS (10)
 
@@ -17,7 +17,7 @@
 extern "C"
 {
   // void nBodySimulation2D(float *particles);
-  void krnl_nbody(float *particles, float *temp, int iterations);
+  void krnl_nbody(float *particles, int iterations);
   
 }
 

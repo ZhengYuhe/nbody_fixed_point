@@ -4,6 +4,7 @@
 */
 
 #include "nbody.h"
+#include <cstdlib>
 
 
 // ********************************************************
@@ -28,28 +29,22 @@ int main()
         exit(EXIT_FAILURE);
     }
     
-    temp = new float[INPUT_LENGTH * 5];
-    if (temp == NULL)
-    {
-        printf("Error allocating temp\n");
-        exit(EXIT_FAILURE);
-    }
+    // temp = new float[INPUT_LENGTH * 5];
+    // if (temp == NULL)
+    // {
+    //     printf("Error allocating temp\n");
+    //     exit(EXIT_FAILURE);
+    // }
 
-    float tmp0 = 18.643;
-    float tmp1 = 15.213;
-    float tmp2 = 18.740;
-    float tmp3 = 18.5;
-    float tmp4 = 1.127;
-
-    float t0 = 8.9;
-    float t1 = 2.2;
-    float t2 = 1.005;
-    float t3 = 4.5;
     
 
-    float t = 2; 
-
     for (int i = 0; i < INPUT_LENGTH * 5; i += 5){
+        float tmp0 = (float(rand() % 200) / 200) * 100.0 - 50.0;
+        float tmp1 = (float(rand() % 200) / 200) * 100.0 - 50.0;
+        float tmp2 = (float(rand() % 200) / 200) * 100.0 - 50.0;
+        float tmp3 = (float(rand() % 200) / 200) * 100.0 - 50.0;
+        float tmp4 = (float(rand() % 200) / 200) * 1000.0;
+
         particles[i] = tmp0;
         particles[i+1] = tmp1;
         particles[i+2] = tmp2;
@@ -61,26 +56,12 @@ int main()
         original_particles[i+3] = tmp3;
         original_particles[i+4] = tmp4;
 
-        tmp0 = tmp0+t0;
-        tmp1 = tmp1+t1;
-        tmp2 = tmp2*t2;
-        tmp3 = tmp3+t3;
-        if (i % 25 == 0){
-            tmp0 = tmp0 / t;
-            tmp1 = tmp1 / t;
-            tmp2 = tmp2 / t;
-            tmp3 = tmp3 / t;
-        }
-
-        if (i % 100 == 0 ){
-            tmp4 = tmp4 + t;
-        }
     }
 
     int iter = ITERATIONS;
 
     printf("Nbody Initialised particles!\n");
-    krnl_nbody(particles, temp, iter);
+    krnl_nbody(particles, iter);
 
     bool calculation_performed = false;
 
