@@ -2,7 +2,8 @@
 # Copyright (C) 2023, Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: X11
 */
-
+#include <stdlib.h>
+#include <iostream>
 #include "nbody.h"
 #include <cstdlib>
 
@@ -39,11 +40,11 @@ int main()
     
 
     for (int i = 0; i < INPUT_LENGTH * 5; i += 5){
-        float tmp0 = (float(rand() % 200) / 200) * 100.0 - 50.0;
-        float tmp1 = (float(rand() % 200) / 200) * 100.0 - 50.0;
-        float tmp2 = (float(rand() % 200) / 200) * 100.0 - 50.0;
-        float tmp3 = (float(rand() % 200) / 200) * 100.0 - 50.0;
-        float tmp4 = (float(rand() % 200) / 200) * 1000.0;
+        float tmp0 = (float(rand() % 200) / 200) * 100.0 - 50;
+        float tmp1 = (float(rand() % 200) / 200) * 100.0 - 50;
+        float tmp2 = (float(rand() % 200) / 200) * 100.0 - 50;
+        float tmp3 = (float(rand() % 200) / 200) * 100.0 - 50;
+        float tmp4 = (float(rand() % 200) / 200) * 100.0;
 
         particles[i] = tmp0;
         particles[i+1] = tmp1;
@@ -66,13 +67,16 @@ int main()
     bool calculation_performed = false;
 
     for (int i = 0; i < INPUT_LENGTH * 5; i += 5){
-        for (int j = 0; j < 4; j ++){
+        for (int j = 0; j < 5; j ++){
+            printf("%f  ", particles[i+j]);
             if (particles[i+j] != original_particles[i+j]){
                 calculation_performed = true;
             }
         }
+        printf("\n");
+        //std::cout << std::endl;
         if (particles[i+4] != original_particles[i+4]){
-            std::cout << "mass difference at particle" << i << std::endl;
+            printf("mass diff!!!!!\n");
             return 1;
         }
     }
