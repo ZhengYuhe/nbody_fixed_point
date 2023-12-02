@@ -62,7 +62,7 @@ ALL TIMES.
         size  (input)     --> Size of Vector in Integer
 */
 
-#define BATCH_SIZE (4)
+#define BATCH_SIZE (16)
 #define ROW_SIZE (INPUT_LENGTH / BATCH_SIZE)
 
 extern "C" {
